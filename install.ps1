@@ -58,9 +58,15 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "✓ Package created" -ForegroundColor Green
 
+# Uninstall old version
+Write-Host "`n🗑️  Uninstalling old version..." -ForegroundColor Yellow
+code --uninstall-extension local.chat-automation
+Start-Sleep -Milliseconds 500
+Write-Host "✓ Old version removed" -ForegroundColor Green
+
 # Install
 Write-Host "`n📥 Installing extension to VS Code..." -ForegroundColor Yellow
-code --install-extension chat-automation-0.0.1.vsix
+code --install-extension chat-automation-0.0.1.vsix --force
 if ($LASTEXITCODE -ne 0) {
     Write-Host "⚠️  Install may have issues, but file is ready" -ForegroundColor Yellow
 } else {

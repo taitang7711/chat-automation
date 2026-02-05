@@ -163,9 +163,24 @@ function getWebviewContent(): string {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // Tạo status bar item
+  const statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
+  statusBarItem.text = "$(comments) Chat Auto";
+  statusBarItem.tooltip = "Chat Automation - Click to send message";
+  statusBarItem.command = "chatAutomation.run";
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
+
   // Command để dừng auto-continue
   const stopCommand = vscode.commands.registerCommand("chatAutomation.stop", () => {
+    statusBarItem.text = "$(comments) Chat Auto ⏹️";
     vscode.window.showInformationMessage("⏹️ Chat Automation stopped");
+    setTimeout(() => {
+      statusBarItem.text = "$(comments) Chat Auto";
+    }, 2000);
   });
 
   const runCommand = vscode.commands.registerCommand("chatAutomation.run", async () => {
@@ -176,6 +191,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     try {
+      // Update status bar
+      statusBarItem.text = "$(loading~spin) Sending...";
+
       // 1. Mở Chat panel và focus vào input
       await vscode.commands.executeCommand("workbench.action.chat.open");
 
@@ -191,10 +209,20 @@ export function activate(context: vscode.ExtensionContext) {
       // 5. Submit chat bằng command
       await vscode.commands.executeCommand("workbench.action.chat.submit");
 
+      statusBarItem.text = "$(check) Sent!";
       vscode.window.showInformationMessage("🚀 Đã gửi tin nhắn vào Chat!");
 
+      // Reset status bar sau 2 giây
+      setTimeout(() => {
+        statusBarItem.text = "$(comments) Chat Auto";
+      }, 2000);
+
     } catch (error) {
+      statusBarItem.text = "$(error) Failed";
       vscode.window.showErrorMessage(`Lỗi: ${error}`);
+      setTimeout(() => {
+        statusBarItem.text = "$(comments) Chat Auto";
+      }, 3000);
     }
   });
 
