@@ -1,0 +1,47 @@
+{
+  "name": "chat-automation",
+  "displayName": "Chat Automation",
+  "description": "Open VS Code Chat, start a new chat, prefill a message, and try to submit via available commands.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/local/chat-automation"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:chatAutomation.run",
+    "onCommand:chatAutomation.stop"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "chatAutomation.run",
+        "title": "Chat Automation: New chat + send"
+      },
+      {
+        "command": "chatAutomation.stop",
+        "title": "Chat Automation: Stop"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "echo \"(no lint configured)\"",
+    "package": "npm run compile && echo y | vsce package --allow-missing-repository --no-yarn",
+    "build": "npm run package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0"
+  }
+}
