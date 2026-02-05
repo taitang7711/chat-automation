@@ -73,8 +73,8 @@ export function refreshPanel(): void {
 
   const workspace = workspaceService.getCurrentWorkspace();
   const messages = configService.getMessages();
-  const schedule = configService.getSchedule();
-  const scheduleState = scheduleService.getScheduleState();
+  const schedules = configService.getSchedules();
+  const scheduleStates = scheduleService.getAllScheduleStates();
   const sendState = chatService.getSendState();
 
   panel.webview.postMessage({
@@ -82,8 +82,11 @@ export function refreshPanel(): void {
     payload: {
       workspace: workspace ? { name: workspace.name, path: workspace.path } : null,
       messages,
-      schedule,
-      scheduleRunning: scheduleState.isRunning,
+      schedules,
+      scheduleStates: Array.from(scheduleStates.entries()).map(([id, state]) => ({
+        id,
+        isRunning: state.isRunning
+      })),
       isSending: sendState.isSending,
       sendProgress: sendState,
     },
@@ -113,9 +116,16 @@ async function handleWebviewMessage(message: WebviewMessage): Promise<void> {
 
     case 'deleteMessage': {
       const { id } = message.payload;
-      await configService.deleteMessage(id);
-      refreshPanel();
-      scheduleService.updateStatusBar();
+      const confirm = await vscode.window.showWarningMessage(
+        'Xóa tin nhắn này?',
+        { modal: true },
+        'Xóa'
+      );
+      if (confirm === 'Xóa') {
+        await configService.deleteMessage(id);
+        refreshPanel();
+        scheduleService.updateStatusBar();
+      }
       break;
     }
 
@@ -156,7 +166,7 @@ async function handleWebviewMessage(message: WebviewMessage): Promise<void> {
     }
 
     case 'stopSchedule': {
-      scheduleService.stopSchedule();
+      await scheduleService.stopSchedule();
       refreshPanel();
       break;
     }
@@ -175,6 +185,87 @@ async function handleWebviewMessage(message: WebviewMessage): Promise<void> {
       );
       if (confirm === 'Xóa') {
         await configService.clearMessages();
+        refreshPanel();
+        scheduleService.updateStatusBar();
+      }
+      break;
+    }
+
+    // ============ SCHEDULE COMMANDS ============
+
+    case 'addIntervalSchedule': {
+      const { name, intervalMs } = message.payload;
+      await configService.addIntervalSchedule(name, intervalMs);
+      refreshPanel();
+      scheduleService.updateStatusBar();
+      break;
+    }
+
+    case 'addTimeBasedSchedule': {
+      const { name, times } = message.payload;
+      await configService.addTimeBasedSchedule(name, times);
+      refreshPanel();
+      scheduleService.updateStatusBar();
+      break;
+    }
+
+    case 'updateSchedule': {
+      const { id, updates } = message.payload;
+      await configService.updateSchedule(id, updates);
+      refreshPanel();
+      scheduleService.updateStatusBar();
+      break;
+    }
+
+    case 'deleteSchedule': {
+      const { id } = message.payload;
+      const confirm = await vscode.window.showWarningMessage(
+        'Xóa lịch này?',
+        { modal: true },
+        'Xóa'
+      );
+      if (confirm === 'Xóa') {
+        await scheduleService.stopScheduleById(id);
+        await configService.deleteSchedule(id);
+        refreshPanel();
+        scheduleService.updateStatusBar();
+      }
+      break;
+    }
+
+    case 'toggleSchedule': {
+      const { id } = message.payload;
+      await scheduleService.toggleScheduleById(id);
+      refreshPanel();
+      scheduleService.updateStatusBar();
+      break;
+    }
+
+    case 'startScheduleById': {
+      const { id } = message.payload;
+      await scheduleService.startScheduleById(id);
+      refreshPanel();
+      scheduleService.updateStatusBar();
+      break;
+    }
+
+    case 'stopScheduleById': {
+      const { id } = message.payload;
+      await scheduleService.stopScheduleById(id);
+      refreshPanel();
+      scheduleService.updateStatusBar();
+      break;
+    }
+
+    case 'clearAllSchedules': {
+      const confirm = await vscode.window.showWarningMessage(
+        'Xóa tất cả lịch?',
+        { modal: true },
+        'Xóa'
+      );
+      if (confirm === 'Xóa') {
+        await scheduleService.stopAllSchedules();
+        await configService.clearSchedules();
         refreshPanel();
         scheduleService.updateStatusBar();
       }
@@ -576,11 +667,7 @@ function getWebviewContent(): string {
       </div>
       
       <div class="message-list" id="messageList">
-        <div class="empty-state" id="emptyState">
-          <div class="empty-state-icon">📭</div>
-          <div>Chưa có tin nhắn nào</div>
-          <div style="font-size: 11px; margin-top: 4px;">Nhấn "Thêm tin nhắn" để bắt đầu</div>
-        </div>
+        <!-- Messages will be rendered here dynamically -->
       </div>
       
       <!-- Add Form -->
@@ -607,22 +694,65 @@ function getWebviewContent(): string {
       </div>
     </div>
     
-    <!-- Schedule -->
+    <!-- Schedules -->
     <div class="section">
-      <div class="section-title">⏰ Lịch lặp lại</div>
-      <div class="schedule-row">
-        <span>Gửi mỗi</span>
-        <input type="number" class="schedule-input" id="scheduleValue" value="30" min="1">
-        <select class="schedule-select" id="scheduleUnit">
-          <option value="1000">giây</option>
-          <option value="60000" selected>phút</option>
-          <option value="3600000">giờ</option>
-        </select>
-        <div class="schedule-status" id="scheduleStatus">Chưa bật</div>
+      <div class="section-title">
+        ⏰ Lịch gửi tự động
+        <span id="scheduleCount" style="font-weight: normal; color: var(--vscode-descriptionForeground);"></span>
       </div>
+      
+      <div class="message-list" id="scheduleList">
+        <!-- Schedules will be rendered here dynamically -->
+      </div>
+      
+      <!-- Add Schedule Form -->
+      <div class="add-form" id="addScheduleForm">
+        <div class="form-group">
+          <label class="form-label">Tên lịch</label>
+          <input type="text" id="newScheduleName" placeholder="VD: Gửi buổi sáng">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Loại lịch</label>
+          <select id="newScheduleType" onchange="toggleScheduleTypeForm()">
+            <option value="interval">Lặp lại theo khoảng thời gian</option>
+            <option value="time-based">Chạy vào giờ cụ thể</option>
+          </select>
+        </div>
+        
+        <!-- Interval Form -->
+        <div id="intervalForm" class="form-row">
+          <div class="form-group">
+            <label class="form-label">Mỗi</label>
+            <input type="number" id="intervalValue" value="30" min="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Đơn vị</label>
+            <select id="intervalUnit">
+              <option value="60000" selected>phút</option>
+              <option value="3600000">giờ</option>
+              <option value="86400000">ngày</option>
+            </select>
+          </div>
+        </div>
+        
+        <!-- Time-Based Form -->
+        <div id="timeBasedForm" class="form-group" style="display: none;">
+          <label class="form-label">Giờ chạy (HH:MM, mỗi dòng một giờ)</label>
+          <textarea id="scheduleTimes" placeholder="07:00\n12:00\n18:00" style="min-height: 80px;"></textarea>
+          <div style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 4px;">
+            Format 24h, VD: 07:00, 14:30, 22:00
+          </div>
+        </div>
+        
+        <div class="actions-bar">
+          <button class="btn-primary" onclick="saveNewSchedule()">✓ Lưu lịch</button>
+          <button class="btn-secondary" onclick="hideAddScheduleForm()">✗ Hủy</button>
+        </div>
+      </div>
+      
       <div class="actions-bar" style="margin-top: 12px;">
-        <button class="btn-primary" id="startScheduleBtn" onclick="startSchedule()">▶️ Bắt đầu lịch</button>
-        <button class="btn-secondary" id="stopScheduleBtn" onclick="stopSchedule()" style="display: none;">⏹️ Dừng lịch</button>
+        <button class="btn-primary" onclick="showAddScheduleForm()">+ Thêm lịch</button>
+        <button class="btn-danger" id="clearAllSchedulesBtn" onclick="clearAllSchedules()" style="display: none;">🗑️ Xóa tất cả</button>
       </div>
     </div>
     
@@ -651,11 +781,12 @@ function getWebviewContent(): string {
     let state = {
       workspace: null,
       messages: [],
-      schedule: null,
-      scheduleRunning: false,
+      schedules: [],
+      scheduleStates: [],
       isSending: false,
       sendProgress: null,
       editingId: null,
+      editingScheduleId: null,
     };
     
     // ============ State Management ============
@@ -671,7 +802,7 @@ function getWebviewContent(): string {
     function render() {
       renderWorkspace();
       renderMessages();
-      renderSchedule();
+      renderSchedules();
       renderActions();
     }
     
@@ -694,25 +825,22 @@ function getWebviewContent(): string {
     
     function renderMessages() {
       const list = document.getElementById('messageList');
-      const empty = document.getElementById('emptyState');
       const count = document.getElementById('messageCount');
       const clearBtn = document.getElementById('clearAllBtn');
-      
-      console.log('renderMessages - state.messages:', state.messages);
-      console.log('renderMessages - messages length:', state.messages.length);
       
       const enabledCount = state.messages.filter(m => m.enabled).length;
       count.textContent = '(' + enabledCount + '/' + state.messages.length + ' đang bật)';
       
       if (state.messages.length === 0) {
-        empty.style.display = 'block';
         clearBtn.style.display = 'none';
-        list.innerHTML = '';
-        list.appendChild(empty);
+        list.innerHTML = '<div class="empty-state">' +
+          '<div class="empty-state-icon">📭</div>' +
+          '<div>Chưa có tin nhắn nào</div>' +
+          '<div style="font-size: 11px; margin-top: 4px;">Nhấn "Thêm tin nhắn" để bắt đầu</div>' +
+        '</div>';
         return;
       }
       
-      empty.style.display = 'none';
       clearBtn.style.display = 'inline-flex';
       
       const htmlParts = state.messages.map((msg, index) => {
@@ -733,12 +861,7 @@ function getWebviewContent(): string {
         '</div>';
       });
       
-      console.log('renderMessages - htmlParts count:', htmlParts.length);
-      const finalHTML = htmlParts.join('');
-      console.log('renderMessages - finalHTML length:', finalHTML.length);
-      
-      list.innerHTML = finalHTML;
-      
+      list.innerHTML = htmlParts.join('');
       setupDragDrop();
     }
     
@@ -848,7 +971,10 @@ function getWebviewContent(): string {
       const delayStr = document.getElementById('newMessageDelay').value;
       
       if (!text) {
-        alert('Vui lòng nhập nội dung tin nhắn');
+        const textarea = document.getElementById('newMessageText');
+        textarea.style.borderColor = 'red';
+        textarea.focus();
+        setTimeout(() => { textarea.style.borderColor = ''; }, 2000);
         return;
       }
       
@@ -874,7 +1000,10 @@ function getWebviewContent(): string {
       const delayStr = document.getElementById('editDelay-' + id).value;
       
       if (!text) {
-        alert('Vui lòng nhập nội dung tin nhắn');
+        const textarea = document.getElementById('editText-' + id);
+        textarea.style.borderColor = 'red';
+        textarea.focus();
+        setTimeout(() => { textarea.style.borderColor = ''; }, 2000);
         return;
       }
       
@@ -888,9 +1017,7 @@ function getWebviewContent(): string {
     }
     
     function deleteMessage(id) {
-      if (confirm('Xóa tin nhắn này?')) {
-        vscode.postMessage({ command: 'deleteMessage', payload: { id } });
-      }
+      vscode.postMessage({ command: 'deleteMessage', payload: { id } });
     }
     
     function clearAllMessages() {
@@ -899,50 +1026,164 @@ function getWebviewContent(): string {
     
     // ============ Schedule ============
     
-    function renderSchedule() {
-      const status = document.getElementById('scheduleStatus');
-      const startBtn = document.getElementById('startScheduleBtn');
-      const stopBtn = document.getElementById('stopScheduleBtn');
-      const valueInput = document.getElementById('scheduleValue');
-      const unitSelect = document.getElementById('scheduleUnit');
+    // ============ Schedules ============
+    
+    function renderSchedules() {
+      const list = document.getElementById('scheduleList');
+      const count = document.getElementById('scheduleCount');
+      const clearBtn = document.getElementById('clearAllSchedulesBtn');
       
-      if (state.scheduleRunning && state.schedule) {
-        status.textContent = '🟢 Đang chạy - Gửi mỗi ' + formatDelay(state.schedule.intervalMs);
-        status.className = 'schedule-status running';
-        startBtn.style.display = 'none';
-        stopBtn.style.display = 'inline-flex';
-      } else {
-        status.textContent = 'Chưa bật';
-        status.className = 'schedule-status';
-        startBtn.style.display = 'inline-flex';
-        stopBtn.style.display = 'none';
+      const runningCount = state.scheduleStates.filter(s => s.isRunning).length;
+      const enabledCount = state.schedules.filter(s => s.enabled).length;
+      count.textContent = '(' + runningCount + '/' + state.schedules.length + ' đang chạy)';
+      
+      if (state.schedules.length === 0) {
+        clearBtn.style.display = 'none';
+        list.innerHTML = '<div class="empty-state">' +
+          '<div class="empty-state-icon">📅</div>' +
+          '<div>Chưa có lịch nào</div>' +
+          '<div style="font-size: 11px; margin-top: 4px;">Nhấn "Thêm lịch" để bắt đầu</div>' +
+        '</div>';
+        return;
       }
       
-      if (state.schedule) {
-        const ms = state.schedule.intervalMs;
-        if (ms >= 3600000) {
-          valueInput.value = ms / 3600000;
-          unitSelect.value = '3600000';
-        } else if (ms >= 60000) {
-          valueInput.value = ms / 60000;
-          unitSelect.value = '60000';
-        } else {
-          valueInput.value = ms / 1000;
-          unitSelect.value = '1000';
+      clearBtn.style.display = 'inline-flex';
+      
+      list.innerHTML = state.schedules.map((schedule, index) => {
+        const isRunning = state.scheduleStates.some(s => s.id === schedule.id && s.isRunning);
+        const isEditing = state.editingScheduleId === schedule.id;
+        
+        let scheduleInfo = '';
+        if (schedule.scheduleType === 'interval' && schedule.intervalMs) {
+          scheduleInfo = 'Mỗi ' + formatDelay(schedule.intervalMs);
+        } else if (schedule.scheduleType === 'time-based' && schedule.times) {
+          scheduleInfo = 'Vào ' + schedule.times.join(', ');
         }
+        
+        return '<div class="message-item ' + (!schedule.enabled ? 'disabled' : '') + '" data-id="' + schedule.id + '">' +
+          '<div class="message-number">' + (index + 1) + '</div>' +
+          '<div class="message-content">' +
+            '<div class="message-text" style="font-weight: 500;">' + escapeHtml(schedule.name) + '</div>' +
+            '<div class="message-meta">' +
+              '<span>📅 ' + (schedule.scheduleType === 'interval' ? 'Lặp lại' : 'Giờ cố định') + '</span>' +
+              '<span>⏱️ ' + scheduleInfo + '</span>' +
+              (isRunning ? '<span style="color: var(--vscode-charts-green);">🟢 Đang chạy</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="message-actions">' +
+            '<button class="btn-icon" onclick="toggleSchedule(\\''+schedule.id+'\\')\" title="' + (schedule.enabled ? 'Tắt' : 'Bật') + '">' + (schedule.enabled ? '✅' : '⬜') + '</button>' +
+            (isRunning 
+              ? '<button class="btn-icon" onclick="stopScheduleById(\\''+schedule.id+'\\')\" title="Dừng">⏹️</button>'
+              : '<button class="btn-icon" onclick="startScheduleById(\\''+schedule.id+'\\')\" title="Chạy">▶️</button>') +
+            '<button class="btn-icon" onclick="deleteSchedule(\\''+schedule.id+'\\')\" title="Xóa">🗑️</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+    
+    function showAddScheduleForm() {
+      document.getElementById('addScheduleForm').classList.add('visible');
+      document.getElementById('newScheduleName').focus();
+    }
+    
+    function hideAddScheduleForm() {
+      document.getElementById('addScheduleForm').classList.remove('visible');
+      document.getElementById('newScheduleName').value = '';
+      document.getElementById('intervalValue').value = '30';
+      document.getElementById('intervalUnit').value = '60000';
+      document.getElementById('scheduleTimes').value = '';
+      document.getElementById('newScheduleType').value = 'interval';
+      toggleScheduleTypeForm();
+    }
+    
+    function toggleScheduleTypeForm() {
+      const type = document.getElementById('newScheduleType').value;
+      const intervalForm = document.getElementById('intervalForm');
+      const timeBasedForm = document.getElementById('timeBasedForm');
+      
+      if (type === 'interval') {
+        intervalForm.style.display = 'flex';
+        timeBasedForm.style.display = 'none';
+      } else {
+        intervalForm.style.display = 'none';
+        timeBasedForm.style.display = 'block';
       }
     }
     
-    function startSchedule() {
-      const value = parseFloat(document.getElementById('scheduleValue').value) || 30;
-      const unit = parseInt(document.getElementById('scheduleUnit').value);
-      const intervalMs = value * unit;
+    function saveNewSchedule() {
+      const name = document.getElementById('newScheduleName').value.trim();
+      const type = document.getElementById('newScheduleType').value;
       
-      vscode.postMessage({ command: 'startSchedule', payload: { intervalMs } });
+      if (!name) {
+        const input = document.getElementById('newScheduleName');
+        input.style.borderColor = 'red';
+        input.focus();
+        setTimeout(() => { input.style.borderColor = ''; }, 2000);
+        return;
+      }
+      
+      if (type === 'interval') {
+        const value = parseFloat(document.getElementById('intervalValue').value) || 30;
+        const unit = parseInt(document.getElementById('intervalUnit').value);
+        const intervalMs = value * unit;
+        
+        vscode.postMessage({ 
+          command: 'addIntervalSchedule', 
+          payload: { name, intervalMs } 
+        });
+      } else {
+        const timesText = document.getElementById('scheduleTimes').value.trim();
+        if (!timesText) {
+          const textarea = document.getElementById('scheduleTimes');
+          textarea.style.borderColor = 'red';
+          textarea.focus();
+          setTimeout(() => { textarea.style.borderColor = ''; }, 2000);
+          return;
+        }
+        
+        const times = timesText.split('\\n').map(t => t.trim()).filter(t => t);
+        
+        // Validate time format
+        const invalidTimes = times.filter(t => !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(t));
+        if (invalidTimes.length > 0) {
+          const textarea = document.getElementById('scheduleTimes');
+          textarea.style.borderColor = 'red';
+          textarea.focus();
+          textarea.placeholder = 'Lỗi: ' + invalidTimes.join(', ') + ' - Format: HH:MM';
+          setTimeout(() => { 
+            textarea.style.borderColor = ''; 
+            textarea.placeholder = '07:00\\n12:00\\n18:00';
+          }, 3000);
+          return;
+        }
+        
+        vscode.postMessage({ 
+          command: 'addTimeBasedSchedule', 
+          payload: { name, times } 
+        });
+      }
+      
+      hideAddScheduleForm();
     }
     
-    function stopSchedule() {
-      vscode.postMessage({ command: 'stopSchedule' });
+    function toggleSchedule(id) {
+      vscode.postMessage({ command: 'toggleSchedule', payload: { id } });
+    }
+    
+    function startScheduleById(id) {
+      vscode.postMessage({ command: 'startScheduleById', payload: { id } });
+    }
+    
+    function stopScheduleById(id) {
+      vscode.postMessage({ command: 'stopScheduleById', payload: { id } });
+    }
+    
+    function deleteSchedule(id) {
+      vscode.postMessage({ command: 'deleteSchedule', payload: { id } });
+    }
+    
+    function clearAllSchedules() {
+      vscode.postMessage({ command: 'clearAllSchedules' });
     }
     
     // ============ Actions ============

@@ -46,8 +46,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     // Dừng gửi
-    vscode.commands.registerCommand('chatAutomation.stop', () => {
-      scheduleService.stopAll();
+    vscode.commands.registerCommand('chatAutomation.stop', async () => {
+      await scheduleService.stopAll();
     }),
 
     // Thêm tin nhắn nhanh
@@ -75,7 +75,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Bắt đầu lịch
     vscode.commands.registerCommand('chatAutomation.startSchedule', async () => {
       const schedule = configService.getSchedule();
-      
+
       if (schedule) {
         await scheduleService.startSchedule();
       } else {
@@ -94,8 +94,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     // Dừng lịch
-    vscode.commands.registerCommand('chatAutomation.stopSchedule', () => {
-      scheduleService.stopSchedule();
+    vscode.commands.registerCommand('chatAutomation.stopSchedule', async () => {
+      await scheduleService.stopSchedule();
     }),
   ];
 
@@ -112,9 +112,9 @@ export function activate(context: vscode.ExtensionContext) {
   }
 }
 
-export function deactivate() {
+export async function deactivate() {
   // Cleanup
-  scheduleService.stopSchedule();
+  await scheduleService.stopSchedule();
   panel.closePanel();
   console.log('Chat Automation extension deactivated');
 }

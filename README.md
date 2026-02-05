@@ -120,6 +120,37 @@ code --install-extension chat-automation-0.0.1.vsix
 # Reload VS Code: Ctrl+Shift+P → "Reload Window"
 ```
 
+## 👨‍💻 Development Workflow
+
+**QUAN TRỌNG:** Sau khi sửa code, LUÔN phải build và reinstall:
+
+### Cách nhanh nhất (khuyên dùng):
+```powershell
+.\rebuild.ps1
+```
+
+### Hoặc chạy từng bước:
+```powershell
+# 1. Compile TypeScript
+npm run compile
+
+# 2. Package thành .vsix
+vsce package --out chat-automation.vsix --no-dependencies
+
+# 3. Install vào VS Code
+code --install-extension chat-automation.vsix --force
+
+# 4. Reload VS Code để áp dụng
+# Ctrl+Shift+P → "Reload Window"
+```
+
+### Testing:
+- **F5**: Launch Extension Development Host
+- **Ctrl+R**: Reload Extension Host
+- Mở panel: Click "Chat Auto" ở Status Bar
+
+📖 Chi tiết xem [.github/copilot-instructions.md](.github/copilot-instructions.md)
+
 ## 📄 License
 
 MIT

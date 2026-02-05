@@ -16,16 +16,32 @@ export interface MessageConfig {
   createdAt: number;
 }
 
+/** Loại lịch */
+export type ScheduleType = 'interval' | 'time-based';
+
 /** Cấu hình lịch lặp lại */
 export interface ScheduleConfig {
+  /** ID duy nhất */
+  id: string;
+  /** Tên lịch */
+  name: string;
+  /** Loại lịch */
+  scheduleType: ScheduleType;
   /** Bật/tắt lịch */
   enabled: boolean;
-  /** Thời gian lặp lại (milliseconds) */
-  intervalMs: number;
+
+  /** Thời gian lặp lại (milliseconds) - dùng cho interval type */
+  intervalMs?: number;
+
+  /** Danh sách giờ chạy - dùng cho time-based type (format: "HH:MM") */
+  times?: string[];
+
   /** Timestamp lần chạy tiếp theo */
   nextRunTimestamp?: number;
   /** Timestamp lần chạy cuối */
   lastRunTimestamp?: number;
+  /** Thời gian tạo */
+  createdAt: number;
 }
 
 /** Cấu hình project */
@@ -36,8 +52,8 @@ export interface ProjectConfig {
   projectName: string;
   /** Danh sách tin nhắn */
   messages: MessageConfig[];
-  /** Cấu hình lịch lặp */
-  schedule: ScheduleConfig | null;
+  /** Danh sách lịch lặp - hỗ trợ nhiều lịch */
+  schedules: ScheduleConfig[];
 }
 
 /** Trạng thái gửi tin nhắn */
@@ -85,6 +101,30 @@ export function createMessage(text: string, delayMs: number = 2000): MessageConf
   };
 }
 
+/** Tạo lịch mới - Interval type */
+export function createIntervalSchedule(name: string, intervalMs: number, enabled: boolean = true): ScheduleConfig {
+  return {
+    id: generateId(),
+    name,
+    scheduleType: 'interval',
+    enabled,
+    intervalMs,
+    createdAt: Date.now(),
+  };
+}
+
+/** Tạo lịch mới - Time-based type */
+export function createTimeBasedSchedule(name: string, times: string[], enabled: boolean = true): ScheduleConfig {
+  return {
+    id: generateId(),
+    name,
+    scheduleType: 'time-based',
+    enabled,
+    times,
+    createdAt: Date.now(),
+  };
+}
+
 /** Format milliseconds thành chuỗi dễ đọc */
 export function formatDelay(ms: number): string {
   if (ms < 1000) {
@@ -105,10 +145,10 @@ export function parseDelay(input: string): number {
   if (!match) {
     return 2000; // default 2 seconds
   }
-  
+
   const value = parseFloat(match[1]);
   const unit = (match[2] || 's').toLowerCase();
-  
+
   switch (unit) {
     case 'ms':
       return Math.round(value);

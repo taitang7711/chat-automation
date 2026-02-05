@@ -3,10 +3,11 @@
  */
 
 import * as vscode from 'vscode';
-import { MessageConfig, ScheduleConfig, createMessage } from '../types';
+import { MessageConfig, ScheduleConfig, createMessage, createIntervalSchedule, createTimeBasedSchedule } from '../types';
 
 const MESSAGES_KEY = 'chatAutomation.messages';
-const SCHEDULE_KEY = 'chatAutomation.schedule';
+const SCHEDULE_KEY = 'chatAutomation.schedule'; // Old single schedule (deprecated)
+const SCHEDULES_KEY = 'chatAutomation.schedules'; // New multiple schedules
 
 let _context: vscode.ExtensionContext | null = null;
 
@@ -138,70 +139,237 @@ export async function clearMessages(): Promise<void> {
     await saveMessages([]);
 }
 
-// ===================== SCHEDULE =====================
+// ===================== SCHEDULE (MULTIPLE) =====================
 
 /**
- * Lấy cấu hình schedule
+ * Migration: Convert old single schedule to new array format
+ */
+function migrateOldSchedule(): void {
+    const oldSchedule = getState().get<ScheduleConfig | null>(SCHEDULE_KEY, null);
+    const existingSchedules = getState().get<ScheduleConfig[] | undefined>(SCHEDULES_KEY, undefined);
+
+    // Nếu đã có schedules mới, không cần migrate
+    if (existingSchedules !== undefined) {
+        return;
+    }
+
+    // Nếu có old schedule và có intervalMs, convert sang array format
+    if (oldSchedule && oldSchedule.intervalMs) {
+        const migrated = createIntervalSchedule(
+            'Lịch mặc định',
+            oldSchedule.intervalMs,
+            oldSchedule.enabled
+        );
+        migrated.nextRunTimestamp = oldSchedule.nextRunTimestamp;
+        migrated.lastRunTimestamp = oldSchedule.lastRunTimestamp;
+
+        getState().update(SCHEDULES_KEY, [migrated]);
+        getState().update(SCHEDULE_KEY, undefined); // Clear old key
+    } else {
+        // Không có gì, init empty array
+        getState().update(SCHEDULES_KEY, []);
+    }
+}
+
+/**
+ * Lấy danh sách tất cả lịch
+ */
+export function getSchedules(): ScheduleConfig[] {
+    migrateOldSchedule();
+    return getState().get<ScheduleConfig[]>(SCHEDULES_KEY, []);
+}
+
+/**
+ * Lưu danh sách lịch
+ */
+export async function saveSchedules(schedules: ScheduleConfig[]): Promise<void> {
+    await getState().update(SCHEDULES_KEY, schedules);
+}
+
+/**
+ * Thêm lịch mới (interval type)
+ */
+export async function addIntervalSchedule(name: string, intervalMs: number): Promise<ScheduleConfig> {
+    const schedules = getSchedules();
+    const newSchedule = createIntervalSchedule(name, intervalMs, true);
+    schedules.push(newSchedule);
+    await saveSchedules(schedules);
+    return newSchedule;
+}
+
+/**
+ * Thêm lịch mới (time-based type)
+ */
+export async function addTimeBasedSchedule(name: string, times: string[]): Promise<ScheduleConfig> {
+    const schedules = getSchedules();
+    const newSchedule = createTimeBasedSchedule(name, times, true);
+    schedules.push(newSchedule);
+    await saveSchedules(schedules);
+    return newSchedule;
+}
+
+/**
+ * Cập nhật lịch
+ */
+export async function updateSchedule(id: string, updates: Partial<ScheduleConfig>): Promise<boolean> {
+    const schedules = getSchedules();
+    const index = schedules.findIndex(s => s.id === id);
+
+    if (index === -1) {
+        return false;
+    }
+
+    schedules[index] = { ...schedules[index], ...updates };
+    await saveSchedules(schedules);
+    return true;
+}
+
+/**
+ * Xóa lịch
+ */
+export async function deleteSchedule(id: string): Promise<boolean> {
+    const schedules = getSchedules();
+    const filtered = schedules.filter(s => s.id !== id);
+
+    if (filtered.length === schedules.length) {
+        return false;
+    }
+
+    await saveSchedules(filtered);
+    return true;
+}
+
+/**
+ * Toggle enable/disable lịch
+ */
+export async function toggleSchedule(id: string): Promise<boolean> {
+    const schedules = getSchedules();
+    const schedule = schedules.find(s => s.id === id);
+
+    if (!schedule) {
+        return false;
+    }
+
+    return updateSchedule(id, { enabled: !schedule.enabled });
+}
+
+/**
+ * Lấy các lịch đang được bật
+ */
+export function getEnabledSchedules(): ScheduleConfig[] {
+    return getSchedules().filter(s => s.enabled);
+}
+
+/**
+ * Xóa tất cả lịch
+ */
+export async function clearSchedules(): Promise<void> {
+    await saveSchedules([]);
+}
+
+/**
+ * Cập nhật timestamp lần chạy cuối cho một lịch
+ */
+export async function updateScheduleLastRun(id: string): Promise<void> {
+    const schedule = getSchedules().find(s => s.id === id);
+    if (schedule) {
+        await updateSchedule(id, {
+            lastRunTimestamp: Date.now(),
+        });
+    }
+}
+
+// ===================== LEGACY (for backward compatibility) =====================
+
+/**
+ * @deprecated Use getSchedules() instead
+ * Lấy cấu hình schedule (legacy - trả về schedule đầu tiên)
  */
 export function getSchedule(): ScheduleConfig | null {
-    return getState().get<ScheduleConfig | null>(SCHEDULE_KEY, null);
+    const schedules = getSchedules();
+    return schedules.length > 0 ? schedules[0] : null;
 }
 
 /**
- * Lưu cấu hình schedule
+ * @deprecated Use saveSchedules() or updateSchedule() instead
+ * Lưu cấu hình schedule (legacy - update schedule đầu tiên hoặc tạo mới)
  */
 export async function saveSchedule(schedule: ScheduleConfig | null): Promise<void> {
-    await getState().update(SCHEDULE_KEY, schedule);
+    const schedules = getSchedules();
+
+    if (schedule === null) {
+        // Clear all schedules
+        await saveSchedules([]);
+        return;
+    }
+
+    if (schedules.length > 0) {
+        // Update first schedule
+        await updateSchedule(schedules[0].id, schedule);
+    } else {
+        // Create new schedule
+        await saveSchedules([schedule]);
+    }
 }
 
 /**
- * Tạo/cập nhật schedule
+ * @deprecated Use addIntervalSchedule() instead
+ * Tạo/cập nhật schedule (legacy)
  */
 export async function setSchedule(intervalMs: number, enabled: boolean = true): Promise<ScheduleConfig> {
-    const schedule: ScheduleConfig = {
-        enabled,
-        intervalMs,
-        nextRunTimestamp: enabled ? Date.now() + intervalMs : undefined,
-    };
-    await saveSchedule(schedule);
-    return schedule;
+    const schedules = getSchedules();
+
+    if (schedules.length > 0) {
+        // Update first schedule
+        const schedule = schedules[0];
+        await updateSchedule(schedule.id, {
+            enabled,
+            intervalMs,
+            nextRunTimestamp: enabled ? Date.now() + intervalMs : undefined,
+        });
+        return getSchedules()[0];
+    } else {
+        // Create new schedule
+        return await addIntervalSchedule('Lịch mặc định', intervalMs);
+    }
 }
 
 /**
- * Bật/tắt schedule
+ * @deprecated Use toggleSchedule(id) instead
+ * Bật/tắt schedule (legacy - toggle schedule đầu tiên)
  */
-export async function toggleSchedule(): Promise<boolean> {
+export async function toggleScheduleLegacy(): Promise<boolean> {
     const schedule = getSchedule();
     if (!schedule) {
         return false;
     }
 
-    schedule.enabled = !schedule.enabled;
-    if (schedule.enabled) {
-        schedule.nextRunTimestamp = Date.now() + schedule.intervalMs;
-    } else {
-        schedule.nextRunTimestamp = undefined;
-    }
-
-    await saveSchedule(schedule);
-    return schedule.enabled;
+    const newEnabled = !schedule.enabled;
+    await updateSchedule(schedule.id, {
+        enabled: newEnabled,
+        nextRunTimestamp: newEnabled && schedule.intervalMs ? Date.now() + schedule.intervalMs : undefined,
+    });
+    return newEnabled;
 }
 
 /**
- * Xóa schedule
+ * @deprecated Use clearSchedules() instead
+ * Xóa schedule (legacy)
  */
 export async function clearSchedule(): Promise<void> {
-    await saveSchedule(null);
+    await clearSchedules();
 }
 
 /**
- * Cập nhật timestamp lần chạy cuối
+ * @deprecated Use updateScheduleLastRun(id) instead
+ * Cập nhật timestamp lần chạy cuối (legacy - update schedule đầu tiên)
  */
 export async function updateLastRun(): Promise<void> {
     const schedule = getSchedule();
-    if (schedule) {
-        schedule.lastRunTimestamp = Date.now();
-        schedule.nextRunTimestamp = Date.now() + schedule.intervalMs;
-        await saveSchedule(schedule);
+    if (schedule && schedule.intervalMs) {
+        await updateSchedule(schedule.id, {
+            lastRunTimestamp: Date.now(),
+            nextRunTimestamp: Date.now() + schedule.intervalMs,
+        });
     }
 }
