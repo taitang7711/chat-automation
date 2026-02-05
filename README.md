@@ -1,6 +1,11 @@
-# Chat Automation (VS Code Extension)
+# Chat Automation v0.1.0 (VS Code Extension)
 
-Extension tự động gửi tin nhắn vào VS Code Chat với giao diện nhập liệu đẹp.
+Extension tự động gửi tin nhắn vào VS Code Chat với:
+- 📂 **Nhận diện workspace** - Mỗi project có bộ tin nhắn riêng
+- 📝 **Quản lý nhiều tin nhắn** - Danh sách tin nhắn với drag & drop
+- ⏱️ **Delay tùy chỉnh** - Mỗi tin nhắn có delay riêng (2s, 500ms, 1m, ...)
+- 🚀 **Gửi hàng loạt** - Gửi tất cả tin nhắn với progress bar + cancel
+- ⏰ **Lịch lặp lại** - Tự động gửi mỗi X phút/giờ
 
 ## 🚀 Cài đặt nhanh (cho người dùng mới)
 

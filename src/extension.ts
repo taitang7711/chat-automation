@@ -1,232 +1,146 @@
-import * as vscode from "vscode";
+/**
+ * Chat Automation Extension - Entry Point
+ * 
+ * Tự động gửi tin nhắn vào VS Code Chat với:
+ * - Nhận diện workspace
+ * - Quản lý nhiều tin nhắn theo project
+ * - Gửi hàng loạt với delay tùy chỉnh
+ * - Lịch lặp lại
+ */
 
-function createWebviewPanel(context: vscode.ExtensionContext): Promise<string | null> {
-  return new Promise((resolve) => {
-    const panel = vscode.window.createWebviewPanel(
-      "chatInput",
-      "Gửi tin nhắn vào Chat",
-      vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-      }
-    );
-
-    panel.webview.html = getWebviewContent();
-
-    panel.webview.onDidReceiveMessage(
-      (message) => {
-        switch (message.command) {
-          case "send":
-            panel.dispose();
-            resolve(message.text);
-            return;
-          case "cancel":
-            panel.dispose();
-            resolve(null);
-            return;
-        }
-      },
-      undefined,
-      context.subscriptions
-    );
-  });
-}
-
-function getWebviewContent(): string {
-  return `<!DOCTYPE html>
-<html lang="vi">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat Automation</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      padding: 20px;
-      background: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground);
-    }
-    .container {
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    h2 {
-      margin-bottom: 15px;
-      color: var(--vscode-editor-foreground);
-      font-size: 18px;
-      font-weight: 600;
-    }
-    textarea {
-      width: 100%;
-      min-height: 200px;
-      padding: 12px;
-      font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 14px;
-      background: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      border: 1px solid var(--vscode-input-border);
-      border-radius: 4px;
-      resize: vertical;
-      margin-bottom: 15px;
-    }
-    textarea:focus {
-      outline: 1px solid var(--vscode-focusBorder);
-      outline-offset: -1px;
-    }
-    .buttons {
-      display: flex;
-      gap: 10px;
-    }
-    button {
-      padding: 8px 20px;
-      font-size: 13px;
-      cursor: pointer;
-      border: none;
-      border-radius: 3px;
-      font-weight: 500;
-      transition: opacity 0.2s;
-    }
-    button:hover {
-      opacity: 0.9;
-    }
-    button:active {
-      opacity: 0.8;
-    }
-    .send-btn {
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-    }
-    .send-btn:hover {
-      background: var(--vscode-button-hoverBackground);
-    }
-    .cancel-btn {
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-    }
-    .cancel-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground);
-    }
-    .hint {
-      font-size: 12px;
-      color: var(--vscode-descriptionForeground);
-      margin-bottom: 10px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h2>📨 Nhập tin nhắn gửi vào Chat</h2>
-    <p class="hint">Bạn có thể nhập nhiều dòng. Nhấn Ctrl+Enter để gửi nhanh.</p>
-    <textarea id="messageInput" placeholder="Nhập tin nhắn của bạn...&#10;Có thể nhiều dòng..." autofocus>Xin chào</textarea>
-    <div class="buttons">
-      <button class="send-btn" onclick="sendMessage()">✓ Gửi</button>
-      <button class="cancel-btn" onclick="cancel()">✗ Hủy</button>
-    </div>
-  </div>
-  <script>
-    const vscode = acquireVsCodeApi();
-    const textarea = document.getElementById('messageInput');
-    
-    // Select default text
-    textarea.select();
-    
-    // Ctrl+Enter to send
-    textarea.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === 'Enter') {
-        sendMessage();
-      }
-    });
-    
-    function sendMessage() {
-      const text = textarea.value.trim();
-      if (text) {
-        vscode.postMessage({
-          command: 'send',
-          text: text
-        });
-      }
-    }
-    
-    function cancel() {
-      vscode.postMessage({
-        command: 'cancel'
-      });
-    }
-  </script>
-</body>
-</html>`;
-}
+import * as vscode from 'vscode';
+import * as configService from './services/configService';
+import * as chatService from './services/chatService';
+import * as scheduleService from './services/scheduleService';
+import * as workspaceService from './services/workspaceService';
+import * as panel from './webview/panel';
 
 export function activate(context: vscode.ExtensionContext) {
-  // Tạo status bar item
-  const statusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100
-  );
-  statusBarItem.text = "$(comments) Chat Auto";
-  statusBarItem.tooltip = "Chat Automation - Click to send message";
-  statusBarItem.command = "chatAutomation.run";
-  statusBarItem.show();
-  context.subscriptions.push(statusBarItem);
+  console.log('Chat Automation extension activated');
 
-  // Command để dừng auto-continue
-  const stopCommand = vscode.commands.registerCommand("chatAutomation.stop", () => {
-    statusBarItem.text = "$(comments) Chat Auto ⏹️";
-    vscode.window.showInformationMessage("⏹️ Chat Automation stopped");
-    setTimeout(() => {
-      statusBarItem.text = "$(comments) Chat Auto";
-    }, 2000);
-  });
+  // Khởi tạo services
+  configService.initConfigService(context);
+  scheduleService.initStatusBar(context);
 
-  const runCommand = vscode.commands.registerCommand("chatAutomation.run", async () => {
-    const message = await createWebviewPanel(context);
+  // Đăng ký commands
+  const commands = [
+    // Mở bảng điều khiển (command chính)
+    vscode.commands.registerCommand('chatAutomation.openPanel', () => {
+      panel.openPanel(context);
+    }),
 
-    if (!message || !message.trim()) {
-      return;
-    }
+    // Alias cho command cũ
+    vscode.commands.registerCommand('chatAutomation.run', () => {
+      panel.openPanel(context);
+    }),
 
-    try {
-      // Update status bar
-      statusBarItem.text = "$(loading~spin) Sending...";
+    // Gửi tất cả tin nhắn
+    vscode.commands.registerCommand('chatAutomation.sendAll', async () => {
+      const messages = configService.getEnabledMessages();
+      if (messages.length === 0) {
+        vscode.window.showWarningMessage('Không có tin nhắn nào được bật.');
+        return;
+      }
+      await chatService.sendBatch(messages);
+      scheduleService.updateStatusBar();
+    }),
 
-      // 1. Mở Chat panel và focus vào input
-      await vscode.commands.executeCommand("workbench.action.chat.open");
+    // Dừng gửi
+    vscode.commands.registerCommand('chatAutomation.stop', () => {
+      scheduleService.stopAll();
+    }),
 
-      // 2. Đợi một chút để chat panel ready
-      await new Promise(resolve => setTimeout(resolve, 300));
+    // Thêm tin nhắn nhanh
+    vscode.commands.registerCommand('chatAutomation.addMessage', async () => {
+      const text = await vscode.window.showInputBox({
+        prompt: 'Nhập nội dung tin nhắn',
+        placeHolder: 'VD: Xin chào...',
+      });
 
-      // 3. Type message vào input bằng command type
-      await vscode.commands.executeCommand("type", { text: message });
+      if (!text) {
+        return;
+      }
 
-      // 4. Đợi một chút
-      await new Promise(resolve => setTimeout(resolve, 200));
+      const delayStr = await vscode.window.showInputBox({
+        prompt: 'Delay trước khi gửi (VD: 2s, 500ms, 1m)',
+        value: '2s',
+      });
 
-      // 5. Submit chat bằng command
-      await vscode.commands.executeCommand("workbench.action.chat.submit");
+      const delayMs = delayStr ? parseDelayString(delayStr) : 2000;
+      await configService.addMessage(text, delayMs);
+      scheduleService.updateStatusBar();
+      vscode.window.showInformationMessage('Đã thêm tin nhắn.');
+    }),
 
-      statusBarItem.text = "$(check) Sent!";
-      vscode.window.showInformationMessage("🚀 Đã gửi tin nhắn vào Chat!");
+    // Bắt đầu lịch
+    vscode.commands.registerCommand('chatAutomation.startSchedule', async () => {
+      const schedule = configService.getSchedule();
+      
+      if (schedule) {
+        await scheduleService.startSchedule();
+      } else {
+        const input = await vscode.window.showInputBox({
+          prompt: 'Nhập thời gian lặp lại (VD: 30m, 1h, 5m)',
+          value: '30m',
+        });
 
-      // Reset status bar sau 2 giây
-      setTimeout(() => {
-        statusBarItem.text = "$(comments) Chat Auto";
-      }, 2000);
+        if (!input) {
+          return;
+        }
 
-    } catch (error) {
-      statusBarItem.text = "$(error) Failed";
-      vscode.window.showErrorMessage(`Lỗi: ${error}`);
-      setTimeout(() => {
-        statusBarItem.text = "$(comments) Chat Auto";
-      }, 3000);
-    }
-  });
+        const intervalMs = parseDelayString(input);
+        await scheduleService.startSchedule(intervalMs);
+      }
+    }),
 
-  context.subscriptions.push(runCommand, stopCommand);
+    // Dừng lịch
+    vscode.commands.registerCommand('chatAutomation.stopSchedule', () => {
+      scheduleService.stopSchedule();
+    }),
+  ];
+
+  // Đăng ký tất cả commands
+  context.subscriptions.push(...commands);
+
+  // Resume schedule nếu có
+  scheduleService.resumeSchedule();
+
+  // Log workspace info
+  const workspace = workspaceService.getCurrentWorkspace();
+  if (workspace) {
+    console.log(`Chat Automation: Workspace "${workspace.name}" at ${workspace.path}`);
+  }
 }
 
-export function deactivate() { }
+export function deactivate() {
+  // Cleanup
+  scheduleService.stopSchedule();
+  panel.closePanel();
+  console.log('Chat Automation extension deactivated');
+}
+
+/**
+ * Parse delay string thành milliseconds
+ */
+function parseDelayString(input: string): number {
+  const match = input.trim().match(/^([\d.]+)\s*(ms|s|m|h)?$/i);
+  if (!match) {
+    return 2000;
+  }
+
+  const value = parseFloat(match[1]);
+  const unit = (match[2] || 's').toLowerCase();
+
+  switch (unit) {
+    case 'ms':
+      return Math.round(value);
+    case 's':
+      return Math.round(value * 1000);
+    case 'm':
+      return Math.round(value * 60000);
+    case 'h':
+      return Math.round(value * 3600000);
+    default:
+      return Math.round(value * 1000);
+  }
+}

@@ -1,8 +1,8 @@
 {
   "name": "chat-automation",
   "displayName": "Chat Automation",
-  "description": "Open VS Code Chat, start a new chat, prefill a message, and try to submit via available commands.",
-  "version": "0.0.1",
+  "description": "Tự động gửi tin nhắn vào VS Code Chat với quản lý theo project, gửi hàng loạt và lịch lặp lại.",
+  "version": "0.1.0",
   "publisher": "local",
   "repository": {
     "type": "git",
@@ -15,19 +15,38 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:chatAutomation.run",
-    "onCommand:chatAutomation.stop"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
+        "command": "chatAutomation.openPanel",
+        "title": "Chat Automation: Mở bảng điều khiển"
+      },
+      {
         "command": "chatAutomation.run",
-        "title": "Chat Automation: New chat + send"
+        "title": "Chat Automation: Mở (alias)"
+      },
+      {
+        "command": "chatAutomation.sendAll",
+        "title": "Chat Automation: Gửi tất cả tin nhắn"
       },
       {
         "command": "chatAutomation.stop",
-        "title": "Chat Automation: Stop"
+        "title": "Chat Automation: Dừng gửi"
+      },
+      {
+        "command": "chatAutomation.addMessage",
+        "title": "Chat Automation: Thêm tin nhắn nhanh"
+      },
+      {
+        "command": "chatAutomation.startSchedule",
+        "title": "Chat Automation: Bắt đầu lịch"
+      },
+      {
+        "command": "chatAutomation.stopSchedule",
+        "title": "Chat Automation: Dừng lịch"
       }
     ]
   },
