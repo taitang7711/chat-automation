@@ -191,12 +191,12 @@ export const INJECT_SCRIPT = `
                 const pendingSessions = findPendingSessions();
                 
                 if (pendingSessions.length > 0) {
-                    // Prioritize in-progress over unread
-                    const inProgressSession = pendingSessions.find(s => s.type === 'in-progress');
-                    if (inProgressSession) {
-                        switchToSession(inProgressSession);
+                    // Prioritize unread over in-progress
+                    const unreadSession = pendingSessions.find(s => s.type === 'unread');
+                    if (unreadSession) {
+                        switchToSession(unreadSession);
                     } else {
-                        // Switch to first unread
+                        // Switch to first in-progress
                         switchToSession(pendingSessions[0]);
                     }
                 } else {
