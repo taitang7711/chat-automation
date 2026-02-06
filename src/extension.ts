@@ -13,6 +13,7 @@ import * as configService from './services/configService';
 import * as chatService from './services/chatService';
 import * as scheduleService from './services/scheduleService';
 import * as workspaceService from './services/workspaceService';
+import * as autoContinueService from './services/autoContinueService';
 import * as panel from './webview/panel';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -21,6 +22,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Khởi tạo services
   configService.initConfigService(context);
   scheduleService.initStatusBar(context);
+  autoContinueService.initAutoContinue(context);
 
   // Đăng ký commands
   const commands = [
@@ -97,6 +99,32 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('chatAutomation.stopSchedule', async () => {
       await scheduleService.stopSchedule();
     }),
+
+    // === Auto-Continue Commands ===
+
+    // Toggle auto-continue
+    vscode.commands.registerCommand('chatAutomation.toggleAutoContinue', async () => {
+      await autoContinueService.toggle();
+      panel.refreshPanel();
+    }),
+
+    // Start auto-continue
+    vscode.commands.registerCommand('chatAutomation.startAutoContinue', async () => {
+      await autoContinueService.start();
+      panel.refreshPanel();
+    }),
+
+    // Stop auto-continue
+    vscode.commands.registerCommand('chatAutomation.stopAutoContinue', () => {
+      autoContinueService.stop();
+      panel.refreshPanel();
+    }),
+
+    // Legacy: Copy inject script (redirect to toggle)
+    vscode.commands.registerCommand('chatAutomation.copyInjectScript', async () => {
+      await autoContinueService.toggle();
+      panel.refreshPanel();
+    }),
   ];
 
   // Đăng ký tất cả commands
@@ -114,6 +142,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 export async function deactivate() {
   // Cleanup
+  autoContinueService.stop();
   await scheduleService.stopSchedule();
   panel.closePanel();
   console.log('Chat Automation extension deactivated');

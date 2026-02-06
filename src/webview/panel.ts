@@ -8,6 +8,7 @@ import * as configService from '../services/configService';
 import * as workspaceService from '../services/workspaceService';
 import * as chatService from '../services/chatService';
 import * as scheduleService from '../services/scheduleService';
+import * as autoContinueService from '../services/autoContinueService';
 
 let panel: vscode.WebviewPanel | null = null;
 
@@ -76,6 +77,7 @@ export function refreshPanel(): void {
   const schedules = configService.getSchedules();
   const scheduleStates = scheduleService.getAllScheduleStates();
   const sendState = chatService.getSendState();
+  const autoContinueState = autoContinueService.getState();
 
   panel.webview.postMessage({
     command: 'refresh',
@@ -89,6 +91,7 @@ export function refreshPanel(): void {
       })),
       isSending: sendState.isSending,
       sendProgress: sendState,
+      autoContinue: autoContinueState,
     },
   });
 }
@@ -274,6 +277,38 @@ async function handleWebviewMessage(message: WebviewMessage): Promise<void> {
 
     case 'refresh': {
       refreshPanel();
+      break;
+    }
+
+    // ============ AUTO-CONTINUE COMMANDS ============
+
+    case 'startAutoContinue': {
+      await autoContinueService.start();
+      refreshPanel();
+      break;
+    }
+
+    case 'stopAutoContinue': {
+      autoContinueService.stop();
+      refreshPanel();
+      break;
+    }
+
+    case 'resetAutoContinueStats': {
+      autoContinueService.resetStats();
+      refreshPanel();
+      break;
+    }
+
+    case 'copyInjectScript': {
+      // Legacy - redirect to start
+      await autoContinueService.start();
+      refreshPanel();
+      break;
+    }
+
+    case 'openDevTools': {
+      await vscode.commands.executeCommand('workbench.action.toggleDevTools');
       break;
     }
   }
@@ -773,6 +808,43 @@ function getWebviewContent(): string {
         </div>
       </div>
     </div>
+    
+    <!-- Auto-Continue Section -->
+    <div class="section">
+      <div class="section-title">🔄 Auto-Continue (Inject Script v2)</div>
+      <p style="font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 12px;">
+        Inject script để tự động: mở Sessions Sidebar, tìm sessions unread/in-progress, switch và click Continue/Allow.
+      </p>
+      
+      <div class="actions-bar">
+        <button class="btn-primary" id="autoContinueToggleBtn" onclick="toggleAutoContinue()">🚀 Bắt đầu (Auto-Setup)</button>
+        <button class="btn-secondary" id="resetStatsBtn" onclick="resetAutoContinueStats()">🔄 Reset</button>
+      </div>
+      
+      <div id="autoContinueStatus" style="margin-top: 12px;">
+        <div id="autoContinueStatusText" style="font-size: 12px; color: var(--vscode-descriptionForeground);">
+          Chưa setup
+        </div>
+      </div>
+      
+      <div style="margin-top: 16px; padding: 12px; background: var(--vscode-textBlockQuote-background); border-radius: 6px; font-size: 11px;">
+        <strong>📌 Cách hoạt động (1-click setup):</strong>
+        <ul style="margin: 8px 0 0 16px; padding: 0;">
+          <li><strong>Click "Bắt đầu"</strong> → Auto copy script + mở DevTools</li>
+          <li>Chuyển sang tab <strong>Console</strong> trong DevTools</li>
+          <li><strong>Paste (Ctrl+V)</strong> và Enter → Done!</li>
+          <li>Script sẽ tự động:
+            <ul style="margin: 4px 0 0 16px;">
+              <li>✅ Mở Sessions Sidebar</li>
+              <li>✅ Tìm sessions unread/in-progress</li>
+              <li>✅ Switch sessions và click Continue/Allow</li>
+              <li>✅ Check mỗi 3 giây</li>
+            </ul>
+          </li>
+          <li>Dừng: Gõ <code>window.stopAutoContinue()</code></li>
+        </ul>
+      </div>
+    </div>
   </div>
   
   <script>
@@ -787,6 +859,7 @@ function getWebviewContent(): string {
       sendProgress: null,
       editingId: null,
       editingScheduleId: null,
+      autoContinue: null,
     };
     
     // ============ State Management ============
@@ -804,6 +877,7 @@ function getWebviewContent(): string {
       renderMessages();
       renderSchedules();
       renderActions();
+      renderAutoContinue();
     }
     
     // ============ Workspace ============
@@ -1227,6 +1301,52 @@ function getWebviewContent(): string {
     
     function refresh() {
       vscode.postMessage({ command: 'refresh' });
+    }
+    
+    // ============ Auto-Continue ============
+    
+    function renderAutoContinue() {
+      const statusText = document.getElementById('autoContinueStatusText');
+      const toggleBtn = document.getElementById('autoContinueToggleBtn');
+      
+      if (state.autoContinue && state.autoContinue.isRunning) {
+        statusText.innerHTML = '<span style="color: var(--vscode-terminal-ansiGreen);">Ready! Paste script in DevTools Console</span>';
+        toggleBtn.textContent = '🔄 Copy Script lại';
+        toggleBtn.className = 'btn-secondary';
+      } else {
+        statusText.innerHTML = '<span style="color: var(--vscode-descriptionForeground);">Chua setup</span>';
+        toggleBtn.textContent = 'Bat dau (Auto-Setup)';
+        toggleBtn.className = 'btn-primary';
+      }
+    }
+    
+    function toggleAutoContinue() {
+      if (state.autoContinue && state.autoContinue.isRunning) {
+        vscode.postMessage({ command: 'stopAutoContinue' });
+      } else {
+        vscode.postMessage({ command: 'startAutoContinue' });
+      }
+    }
+    
+    function resetAutoContinueStats() {
+      vscode.postMessage({ command: 'resetAutoContinueStats' });
+    }
+    
+    // Legacy functions (keep for compatibility)
+    function copyInjectScript() {
+      vscode.postMessage({ command: 'startAutoContinue' });
+    }
+    
+    function openDevTools() {
+      vscode.postMessage({ command: 'openDevTools' });
+    }
+    
+    function startAutoContinue() {
+      vscode.postMessage({ command: 'startAutoContinue' });
+    }
+    
+    function stopAutoContinue() {
+      vscode.postMessage({ command: 'stopAutoContinue' });
     }
     
     // ============ Init ============

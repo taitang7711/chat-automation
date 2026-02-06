@@ -101,7 +101,7 @@ export function cancelSending(): void {
  */
 export async function sendBatch(messages: MessageConfig[]): Promise<{ sent: number; total: number }> {
   const enabledMessages = messages.filter(m => m.enabled);
-  
+
   if (enabledMessages.length === 0) {
     vscode.window.showWarningMessage('Không có tin nhắn nào được bật.');
     return { sent: 0, total: 0 };
@@ -191,4 +191,83 @@ export async function sendAllFromConfig(): Promise<{ sent: number; total: number
   const { getMessages } = await import('./configService');
   const messages = getMessages();
   return sendBatch(messages);
+}
+
+/**
+ * Discover all available VS Code commands related to chat/agent/copilot
+ */
+export async function discoverCommands(): Promise<string[]> {
+  const allCommands = await vscode.commands.getCommands(true);
+  const patterns = ['chat', 'agent', 'copilot', 'session', 'continue', 'allow', 'accept', 'approve'];
+
+  const relevantCommands = allCommands.filter(cmd => {
+    const lowerCmd = cmd.toLowerCase();
+    return patterns.some(p => lowerCmd.includes(p));
+  });
+
+  // Log to output channel
+  const outputChannel = vscode.window.createOutputChannel('Chat Automation - Commands');
+  outputChannel.clear();
+  outputChannel.appendLine('=== Available Commands ===');
+  outputChannel.appendLine(`Total found: ${relevantCommands.length}`);
+  outputChannel.appendLine('');
+
+  relevantCommands.sort().forEach(cmd => {
+    outputChannel.appendLine(cmd);
+  });
+
+  outputChannel.show();
+
+  return relevantCommands;
+}
+
+/**
+ * Try to execute continue/allow action for agent sessions
+ * Returns true if successful
+ */
+export async function tryAutoContinue(): Promise<boolean> {
+  // List of potential continue/allow commands to try
+  const continueCommands = [
+    'github.copilot.chat.continue',
+    'github.copilot.agent.continue',
+    'workbench.action.chat.continue',
+    'workbench.action.chat.accept',
+    'workbench.action.chat.acceptAction',
+    'chat.action.continue',
+    'chat.action.accept',
+    'agent.continue',
+    'agent.accept',
+  ];
+
+  for (const cmd of continueCommands) {
+    const success = await tryCmd(cmd);
+    if (success) {
+      console.log(`Auto-continue: executed ${cmd}`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Try to toggle Agent Sessions sidebar
+ */
+export async function toggleAgentSessionsSidebar(): Promise<boolean> {
+  const sidebarCommands = [
+    'workbench.action.chat.openAgentSessionsSidebar',
+    'workbench.action.chat.toggleAgentSessions',
+    'github.copilot.chat.openAgentSessions',
+    'workbench.view.extension.agent-sessions',
+  ];
+
+  for (const cmd of sidebarCommands) {
+    const success = await tryCmd(cmd);
+    if (success) {
+      console.log(`Toggle sidebar: executed ${cmd}`);
+      return true;
+    }
+  }
+
+  return false;
 }

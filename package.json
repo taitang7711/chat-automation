@@ -47,6 +47,26 @@
       {
         "command": "chatAutomation.stopSchedule",
         "title": "Chat Automation: Dừng lịch"
+      },
+      {
+        "command": "chatAutomation.toggleAutoContinue",
+        "title": "Chat Automation: Bật/tắt Auto-Continue"
+      },
+      {
+        "command": "chatAutomation.startAutoContinue",
+        "title": "Chat Automation: Bắt đầu Auto-Continue"
+      },
+      {
+        "command": "chatAutomation.stopAutoContinue",
+        "title": "Chat Automation: Dừng Auto-Continue"
+      },
+      {
+        "command": "chatAutomation.copyInjectScript",
+        "title": "Chat Automation: Copy Script (dùng trong DevTools)"
+      },
+      {
+        "command": "chatAutomation.discoverCommands",
+        "title": "Chat Automation: Khám phá Commands (Debug)"
       }
     ]
   },
